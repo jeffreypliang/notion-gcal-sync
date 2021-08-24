@@ -5,6 +5,8 @@
   "author": "Jeffrey Liang <jeffrey.liang123@gmail.com> (http://www.jeffreypliang.com/)",
   "main": "index.js",
   "dependencies": {
-    "@notionhq/client": "^0.3.0"
+    "@notionhq/client": "^0.3.0",
+    "dotenv": "^10.0.0",
+    "googleapis": "^84.0.0"
   }
 }
