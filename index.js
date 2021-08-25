@@ -5,18 +5,20 @@ const dotenv = require("dotenv");
 dotenv.config();
 
 const notionToken = process.env.NOTION_TOKEN;
-const databaseId = process.env.NOTION_DATABASE_ID;
+const notionDatabaseId = process.env.NOTION_DATABASE_ID;
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
 const googleRefreshToken = process.env.GOOGLE_REFRESH_TOKEN;
 const googleRedirectUrl = "https://developers.google.com/oauthplayground";
 
 const googleAuth = createGoogleAuth();
+const notionClient = new Client({ auth: notionToken });
 
 listTaskLists(googleAuth);
+getFromNotion();
 
 /**
- * Creates an authorized OAuth2 client using credentials retrieved from the .env file.
+ * Creates an authorized OAuth2 client using the provided credentials.
  * 
  * @returns {google.auth.OAuth2} An authorized OAuth2 client.
  */
@@ -26,10 +28,25 @@ function createGoogleAuth() {
         googleClientSecret,
         googleRedirectUrl,
     );
-    auth.setCredentials({
-        refresh_token: googleRefreshToken
-    });
+    auth.setCredentials({ refresh_token: googleRefreshToken });
     return auth;
+}
+
+async function getFromNotion() {
+    let pages = [];
+    let cursor = undefined;
+    while (true) {
+        const { results, next_cursor } = await notionClient.databases.query({
+            database_id: notionDatabaseId,
+            start_cursor: cursor,
+        });
+        pages.push(...results);
+        if (!next_cursor) {
+            break;
+        }
+        cursor = next_cursor;
+    }
+    console.log(pages)
 }
 
 /**
