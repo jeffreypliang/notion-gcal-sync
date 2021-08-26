@@ -33,20 +33,50 @@ function createGoogleAuth() {
 }
 
 async function getFromNotion() {
-    let pages = [];
-    let cursor = undefined;
-    while (true) {
-        const { results, next_cursor } = await notionClient.databases.query({
-            database_id: notionDatabaseId,
-            start_cursor: cursor,
-        });
-        pages.push(...results);
-        if (!next_cursor) {
-            break;
-        }
-        cursor = next_cursor;
-    }
-    console.log(pages)
+    const { results } = await notionClient.databases.query({
+        database_id: notionDatabaseId,
+        filter: {
+            or: [
+                {
+                    property: "Type",
+                    select: {
+                        equals: "Lab"
+                    }
+                },
+                {
+                    property: "Type",
+                    select: {
+                        equals: "Quiz"
+                    }
+                },
+                {
+                    property: "Type",
+                    select: {
+                        equals: "Homework"
+                    }
+                },
+                {
+                    property: "Type",
+                    select: {
+                        equals: "Project"
+                    }
+                },
+                {
+                    property: "Type",
+                    select: {
+                        equals: "Project"
+                    }
+                },
+                {
+                    property: "Type",
+                    select: {
+                        equals: "Extra Credit"
+                    }
+                },
+            ]
+        },
+    });
+    return results;
 }
 
 /**
