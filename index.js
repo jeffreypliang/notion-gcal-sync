@@ -1,5 +1,5 @@
 const { Client } = require("@notionhq/client");
-const { google } = require("googleapis");
+const { google, tasks_v1 } = require("googleapis");
 const dotenv = require("dotenv");
 
 dotenv.config();
@@ -10,12 +10,17 @@ const googleClientId = process.env.GOOGLE_CLIENT_ID;
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
 const googleRefreshToken = process.env.GOOGLE_REFRESH_TOKEN;
 const googleRedirectUrl = "https://developers.google.com/oauthplayground";
+const googleTaskListTitle = process.env.GOOGLE_TASK_LIST_TITLE;
 
 const googleAuth = createGoogleAuth();
+
+const tasksClient = google.tasks({
+    version: 'v1',
+    auth: googleAuth,
+});
 const notionClient = new Client({ auth: notionToken });
 
-listTaskLists(googleAuth);
-getFromNotion();
+getTaskList();
 
 /**
  * Creates an authorized OAuth2 client using the provided credentials.
@@ -33,71 +38,65 @@ function createGoogleAuth() {
 }
 
 async function getFromNotion() {
-    const { results } = await notionClient.databases.query({
-        database_id: notionDatabaseId,
-        filter: {
-            or: [
-                {
-                    property: "Type",
-                    select: {
-                        equals: "Lab"
-                    }
-                },
-                {
-                    property: "Type",
-                    select: {
-                        equals: "Quiz"
-                    }
-                },
-                {
-                    property: "Type",
-                    select: {
-                        equals: "Homework"
-                    }
-                },
-                {
-                    property: "Type",
-                    select: {
-                        equals: "Project"
-                    }
-                },
-                {
-                    property: "Type",
-                    select: {
-                        equals: "Project"
-                    }
-                },
-                {
-                    property: "Type",
-                    select: {
-                        equals: "Extra Credit"
-                    }
-                },
-            ]
-        },
-    });
-    return results;
+    const pages = [];
+    let cursor = undefined;
+    do {
+        const { results, next_cursor } = await notionClient.databases.query({
+            database_id: notionDatabaseId,
+            start_cursor: cursor,
+            filter: {
+                or: [
+                    {
+                        property: "Type",
+                        select: {
+                            equals: "Lab"
+                        }
+                    },
+                    {
+                        property: "Type",
+                        select: {
+                            equals: "Quiz"
+                        }
+                    },
+                    {
+                        property: "Type",
+                        select: {
+                            equals: "Homework"
+                        }
+                    },
+                    {
+                        property: "Type",
+                        select: {
+                            equals: "Project"
+                        }
+                    },
+                    {
+                        property: "Type",
+                        select: {
+                            equals: "Extra Credit"
+                        }
+                    },
+                ]
+            },
+        });
+        pages.push(...results);
+        cursor = next_cursor;
+    } while (cursor);
+    return pages;
 }
 
-/**
- * Lists the user's first 10 task lists.
- *
- * @param {google.auth.OAuth2} auth An authorized OAuth2 client.
- */
-function listTaskLists(auth) {
-    const service = google.tasks({ version: 'v1', auth });
-    service.tasklists.list({
-        maxResults: 10,
-    }, (err, res) => {
-        if (err) return console.error('The API returned an error: ' + err);
-        const taskLists = res.data.items;
-        if (taskLists) {
-            console.log('Task lists:');
-            taskLists.forEach((taskList) => {
-                console.log(`${taskList.title} (${taskList.id})`);
-            });
-        } else {
-            console.log('No task lists found.');
+async function getTaskList() {
+    let pageToken = undefined;
+    do {
+        const { data } = await tasksClient.tasklists.list({
+            pageToken: pageToken,
+        })
+        for (const list of data.items) {
+            if (list.title == googleTaskListTitle) {
+                console.log(list);
+                return list;
+            }
         }
-    });
+        pageToken = data.nextPageToken;
+    } while (pageToken);
 }
