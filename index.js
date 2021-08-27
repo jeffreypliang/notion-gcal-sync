@@ -13,14 +13,15 @@ const googleRedirectUrl = "https://developers.google.com/oauthplayground";
 const googleTaskListTitle = process.env.GOOGLE_TASK_LIST_TITLE;
 
 const googleAuth = createGoogleAuth();
-
 const tasksClient = google.tasks({
     version: 'v1',
     auth: googleAuth,
 });
 const notionClient = new Client({ auth: notionToken });
 
-getTaskList();
+async function printNotion() {
+    console.log(await getFromNotion());
+}
 
 /**
  * Creates an authorized OAuth2 client using the provided credentials.
@@ -82,7 +83,10 @@ async function getFromNotion() {
         pages.push(...results);
         cursor = next_cursor;
     } while (cursor);
-    return pages;
+    return new Map(pages.map(page => [page.id, {
+            date: page.properties["Date"].date.end ? page.properties["Date"].date.end : page.properties["Date"].date.start,
+            status: page.properties["Status"].select.name,
+    }]));
 }
 
 async function getTaskList() {
@@ -90,13 +94,30 @@ async function getTaskList() {
     do {
         const { data } = await tasksClient.tasklists.list({
             pageToken: pageToken,
-        })
+        });
         for (const list of data.items) {
             if (list.title == googleTaskListTitle) {
-                console.log(list);
-                return list;
+                return list.id;
             }
         }
         pageToken = data.nextPageToken;
     } while (pageToken);
+}
+
+async function getFromTasks() {
+    const tasks = [];
+    const taskList = await getTaskList();
+    let pageToken = undefined;
+    do {
+        const { data } = await tasksClient.tasks.list({
+            tasklist: taskList,
+            pageToken: pageToken,
+            showCompleted: true,
+            showHidden: true,
+            maxResults: 1,
+        });
+        tasks.push(...data.items);
+        pageToken = data.nextPageToken;
+    } while (pageToken);
+    return tasks;
 }
