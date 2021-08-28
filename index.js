@@ -20,8 +20,22 @@ const tasksClient = google.tasks({
 const notionClient = new Client({ auth: notionToken });
 
 async function printNotion() {
-    console.log(await getFromNotion());
+    console.log(await getPages());
 }
+
+addTasks();
+printTasks();
+
+async function printPages() {
+    const pages = await getPages();
+    console.log(pages);
+}
+
+async function printTasks() {
+    const tasks = await getTasks();
+    console.log(tasks);
+}
+
 
 /**
  * Creates an authorized OAuth2 client using the provided credentials.
@@ -38,7 +52,7 @@ function createGoogleAuth() {
     return auth;
 }
 
-async function getFromNotion() {
+async function getPages() {
     const pages = [];
     let cursor = undefined;
     do {
@@ -83,10 +97,101 @@ async function getFromNotion() {
         pages.push(...results);
         cursor = next_cursor;
     } while (cursor);
-    return new Map(pages.map(page => [page.id, {
-            date: page.properties["Date"].date.end ? page.properties["Date"].date.end : page.properties["Date"].date.start,
-            status: page.properties["Status"].select.name,
-    }]));
+    return new Map(pages.map(page => {
+        let name = undefined;
+        let course = undefined;
+        let date = undefined;
+        let status = undefined;
+        if (page.properties["Name"].title[0]) {
+            name = page.properties["Name"].title[0].plain_text;
+        }
+        if (page.properties["Course"].select) {
+            course = page.properties["Course"].select.name;
+        }
+        if (page.properties["Date"].date) {
+            if (page.properties["Date"].date.end) {
+                date = formatDateRFC(page.properties["Date"].date.end);
+            } else {
+                date = formatDateRFC(page.properties["Date"].date.start);
+            }
+        }
+        if (page.properties["Status"].select) {
+            status = page.properties["Status"].select.name;
+        }
+        return [page.id, {
+            name: name,
+            course: course,
+            date: date,
+            status: status,
+        }]
+    }));
+}
+
+async function addTasks() {
+    const taskList = await getTaskList();
+    const pages = await getPages();
+    for (const [key, value] of pages) {
+        let title = "";
+        let status = "needsAction";
+        let due = value.date;
+        if (value.name) {
+            if (value.course) {
+                title = `[${value.course}] ${value.name}`;
+            } else {
+                title = value.name;
+            }
+        }
+        if (value.status == "Done") {
+            status = "completed";
+        }
+        console.log(due);
+        tasksClient.tasks.insert({
+            tasklist: taskList,
+            requestBody: {
+                title: title,
+                notes: key,
+                status: status,
+                due: value.date,
+            }
+        });
+    }
+}
+
+async function updateTasks() {
+    const taskList = await getTaskList();
+    const tasks = await getTasks();
+    for (const task of tasks) {
+
+        tasksClient.tasks.update({
+            tasklist: taskList,
+            task: task.id,
+            requestBody: {
+                kind: "tasks#task",
+                id: task.id,
+                status: "needsAction",
+            }
+        })
+    }
+}
+
+async function getTasks() {
+    const tasks = [];
+    const taskList = await getTaskList();
+    let pageToken = undefined;
+    do {
+        const { data } = await tasksClient.tasks.list({
+            tasklist: taskList,
+            pageToken: pageToken,
+            showCompleted: true,
+            showHidden: true,
+            maxResults: 1,
+        });
+        if (data.items) {
+            tasks.push(...data.items);
+        }
+        pageToken = data.nextPageToken;
+    } while (pageToken);
+    return tasks;
 }
 
 async function getTaskList() {
@@ -104,20 +209,15 @@ async function getTaskList() {
     } while (pageToken);
 }
 
-async function getFromTasks() {
-    const tasks = [];
-    const taskList = await getTaskList();
-    let pageToken = undefined;
-    do {
-        const { data } = await tasksClient.tasks.list({
-            tasklist: taskList,
-            pageToken: pageToken,
-            showCompleted: true,
-            showHidden: true,
-            maxResults: 1,
-        });
-        tasks.push(...data.items);
-        pageToken = data.nextPageToken;
-    } while (pageToken);
-    return tasks;
+function formatDateRFC(str) {
+    const d = new Date(Date.parse(str));
+    function pad(n) {
+        return n < 10 ? '0' + n : n;
+    }
+    return d.getUTCFullYear()+'-'
+         + pad(d.getUTCMonth()+1)+'-'
+         + pad(d.getUTCDate())+'T'
+         + pad(d.getUTCHours())+':'
+         + pad(d.getUTCMinutes())+':'
+         + pad(d.getUTCSeconds())+'Z';
 }
