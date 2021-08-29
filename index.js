@@ -61,7 +61,7 @@ const calendarClient = google.calendar({
 const notionClient = new Client({ auth: notionToken });
 
 // setInterval(sync, 30000);
-// await sync();
+sync();
 
 /**
  * Creates an authorized OAuth2 client using the provided credentials.
@@ -83,7 +83,8 @@ function createGoogleAuth() {
  */
 async function sync() {
     const pages = await getPages();
-    syncCalendar(pages);
+    await syncGCal(pages);
+    await syncNotion(pages);
 }
 
 /**
@@ -106,8 +107,13 @@ async function getPages() {
     return new Map(pages.map(page => [page.id, reducePage(page)]));
 }
 
-async function syncCalendar(pages) {
-    return;
+async function getPage(pageId) {
+    try {
+        const page = await notionClient.pages.retrieve({ page_id: pageId });
+        return reducePage(page);
+    } catch (error) {
+        return undefined;
+    }
 }
 
 /**
@@ -117,105 +123,119 @@ async function syncCalendar(pages) {
  * @returns {Object} An object containing the pages id, name, course, date, and status.
  */
 function reducePage(page) {
-    let name = undefined;
-    let course = undefined;
-    let date = undefined;
-    let status = undefined;
+    const reducedPage = {
+        id: page.id,
+        name: undefined,
+        course: undefined,
+        date: undefined,
+        status: undefined,
+    };
     if (page.properties["Name"].title[0]) {
-        name = page.properties["Name"].title[0].plain_text;
+        reducedPage.name = page.properties["Name"].title[0].plain_text;
     }
     if (page.properties["Course"].select) {
-        course = page.properties["Course"].select.name;
+        reducedPage.course = page.properties["Course"].select.name;
     }
     if (page.properties["Date"].date) {
         if (page.properties["Date"].date.end) {
-            date = formatDateRFC(page.properties["Date"].date.end);
+            reducedPage.date = page.properties["Date"].date.end;
         } else {
-            date = formatDateRFC(page.properties["Date"].date.start);
+            reducedPage.date = page.properties["Date"].date.start;
         }
     }
     if (page.properties["Status"].select) {
-        status = page.properties["Status"].select.name;
+        reducedPage.status = page.properties["Status"].select.name;
     }
-    return {
-        id: page.id,
-        name: name,
-        course: course,
-        date: date,
-        status: status,
+    return reducedPage;
+}
+
+/**
+ * Syncs events currently in the calendar with Notion.
+ * 
+ * @param {Map} pages A map, with page ids as keys and reduced pages as values.
+ */
+async function syncGCal(pages) {
+    const events = await getEvents();
+    for (e of events) {
+        const pageId = e.description;
+        const page = await getPage(pageId);
+        if (!page) {
+            await calendarClient.events.delete({
+                calendarId: googleCalendarId,
+                eventId: e.id,
+            });
+        } else {
+            const event = createEvent(page);
+            await calendarClient.events.update({
+                calendarId: googleCalendarId,
+                eventId: e.id,
+                requestBody: event,
+            });
+            pages.delete(page.id);
+        }
+    }
+}
+
+/**
+ * Sync events not currently in the calendar with Notion.
+ * 
+ * @param {Map} pages A map, with page ids as keys and reduced pages as values.
+ */
+async function syncNotion(pages) {
+    for (const [pageId, page] of pages) {
+        const event = createEvent(page);
+        await calendarClient.events.insert({
+            calendarId: googleCalendarId,
+            requestBody: event,
+        });
+    }
+}
+
+function createEvent(page) {
+    const event = {
+        summary: "",
+        description: page.id,
+        start: {
+            dateTime: page.date,
+        },
+        end: {
+            dateTime: page.date,
+        },
     };
+    if (page.name) {
+        if (page.course) {
+            event.summary = `[${page.course}] ${page.name}`;
+        } else {
+            event.summary = page.name;
+        }
+    }
+    if (page.status == "Done") {
+        event.summary = strikeThrough(event.summary);
+    }
+    return event;
 }
 
-async function addTasks() {
-    const taskList = await getTaskList();
-    const pages = await getPages();
-    for (const [key, value] of pages) {
-        let title = "";
-        let status = "needsAction";
-        let due = value.date;
-        if (value.name) {
-            if (value.course) {
-                title = `[${value.course}] ${value.name}`;
-            } else {
-                title = value.name;
-            }
-        }
-        if (value.status == "Done") {
-            status = "completed";
-        }
-        calendarClient.tasks.insert({
-            tasklist: taskList,
-            requestBody: {
-                title: title,
-                notes: key,
-                status: status,
-                due: due,
-            }
-        });
-    }
+function strikeThrough(text) {
+    return text.split('').map(char => char + '\u0336').join('');
 }
 
-async function updateTasks() {
-    const taskList = await getTaskList();
-    const tasks = await getTasks();
-    for (const task of tasks) {
-        pageId = task.notes;
-        const page = await notionClient.pages.retrieve({
-            page_id: pageId,
+/**
+ * Gets the events from the specified calendar.
+ * 
+ * @returns {Array} An array of events from the specified calendar.
+ */
+async function getEvents() {
+    const events = [];
+    let pageToken = undefined;
+    do {
+        const { data } = await calendarClient.events.list({
+            calendarId: googleCalendarId,
+            pageToken: pageToken,
         });
-        console.log(page);
-        let name = undefined;
-        let course = undefined;
-        let date = undefined;
-        let status = undefined;
-        if (page.properties["Name"].title[0]) {
-            name = page.properties["Name"].title[0].plain_text;
-        }
-        if (page.properties["Course"].select) {
-            course = page.properties["Course"].select.name;
-        }
-        if (page.properties["Date"].date) {
-            if (page.properties["Date"].date.end) {
-                date = formatDateRFC(page.properties["Date"].date.end);
-            } else {
-                date = formatDateRFC(page.properties["Date"].date.start);
-            }
-        }
-        if (page.properties["Status"].select) {
-            status = page.properties["Status"].select.name;
-        }
-        calendarClient.tasks.update({
-            tasklist: taskList,
-            task: task.id,
-            requestBody: {
-                id: task.id,
-                title: name,
-                notes: pageId,
-                status: status,
-                due: date,
-            }
-        })
-    }
+        events.push(...data.items)
+        pageToken = data.nextPageToken;
+    } while (pageToken);
+    return events;
 }
 
 async function getTasks() {
@@ -238,30 +258,20 @@ async function getTasks() {
     return tasks;
 }
 
-async function getTaskList() {
-    let pageToken = undefined;
-    do {
-        const { data } = await calendarClient.calendarList.list({
-            pageToken: pageToken,
-        });
-        for (const list of data.items) {
-            if (list.title == googleTaskListTitle) {
-                return list.id;
-            }
-        }
-        pageToken = data.nextPageToken;
-    } while (pageToken);
-}
-
-function formatDateRFC(str) {
-    const d = new Date(Date.parse(str));
+/**
+ * 
+ * @param {string} str
+ * @returns 
+ */
+function formatDateRFC(dateString) {
+    const date = new Date(Date.parse(dateString));
     function pad(n) {
         return n < 10 ? '0' + n : n;
     }
-    return d.getUTCFullYear()+'-'
-         + pad(d.getUTCMonth()+1)+'-'
-         + pad(d.getUTCDate())+'T'
-         + pad(d.getUTCHours())+':'
-         + pad(d.getUTCMinutes())+':'
-         + pad(d.getUTCSeconds())+'Z';
+    return date.getUTCFullYear()+'-'
+         + pad(date.getUTCMonth()+1)+'-'
+         + pad(date.getUTCDate())+'T'
+         + pad(date.getUTCHours())+':'
+         + pad(date.getUTCMinutes())+':'
+         + pad(date.getUTCSeconds())+'Z';
 }
