@@ -27,12 +27,6 @@ const pageFilter = {
             },
         },
         {
-            property: "Status",
-            select: {
-                does_not_equal: "Done",
-            },
-        },
-        {
             property: "Type",
             select: {
                 does_not_equal: "Lecture",
@@ -88,12 +82,14 @@ async function syncGCal(pages) {
             });
         } else {
             const page = pages.get(pageId);
-            const event = createEvent(page);
-            await calendarClient.events.update({
-                calendarId: googleCalendarId,
-                eventId: e.id,
-                requestBody: event,
-            });
+            const updatedEvent = createEvent(page);
+            if (!eventsEqual(e, updatedEvent)) {
+                await calendarClient.events.update({
+                    calendarId: googleCalendarId,
+                    eventId: e.id,
+                    requestBody: updatedEvent,
+                });
+            }   
             pages.delete(pageId);
         }
     }
@@ -202,6 +198,7 @@ async function getEvents() {
 }
 
 /**
+ * Creates a Google Calendar event for the given page.
  * 
  * @param {Object} page An object containing the page's id, name, course, date, and status.
  * @returns {Object} A Google Calendar event.
@@ -220,9 +217,9 @@ async function getEvents() {
             event.summary = page.name;
         }
     }
-    // if (page.status == "Done") {
-    //     event.summary = strikeThrough(event.summary);
-    // }
+    if (page.status == "Done") {
+        event.summary = strikeThrough(event.summary);
+    }
     if (page.date.length == 10) {
         const date = {
             date: page.date,
@@ -237,6 +234,21 @@ async function getEvents() {
         event.end = date;
     }
     return event;
+}
+
+/**
+ * Checks if two events are equal, based on the requirements for this script.
+ * 
+ * @param {Object} e1 A Google Calendar event.
+ * @param {Object} e2 A Google Calendar event.
+ */
+function eventsEqual(e1, e2) {
+    return e1.summary == e2.summary
+        && e1.description == e2.description
+        && e1.start.date == e2.start.date
+        && Date.parse(e1.start.dateTime) == Date.parse(e2.start.dateTime)
+        && e1.end.date == e2.end.date
+        && Date.parse(e1.end.dateTime) == Date.parse(e2.end.dateTime);
 }
 
 /**
