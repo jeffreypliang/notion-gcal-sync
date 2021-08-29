@@ -33,39 +33,17 @@ const pageFilter = {
             },
         },
         {
-            or: [
-                {
-                    property: "Type",
-                    select: {
-                        equals: "Lab",
-                    },
-                },
-                {
-                    property: "Type",
-                    select: {
-                        equals: "Quiz",
-                    },
-                },
-                {
-                    property: "Type",
-                    select: {
-                        equals: "Homework",
-                    },
-                },
-                {
-                    property: "Type",
-                    select: {
-                        equals: "Project",
-                    },
-                },
-                {
-                    property: "Type",
-                    select: {
-                        equals: "Extra Credit",
-                    },
-                },
-            ],
+            property: "Type",
+            select: {
+                does_not_equal: "Lecture",
+            },
         },
+        {
+            property: "Type",
+            select: {
+                does_not_equal: "Exam",
+            }
+        }
     ],
 }
 
@@ -101,7 +79,7 @@ async function sync() {
  */
 async function syncGCal(pages) {
     const events = await getEvents();
-    for (e of events) {
+    for (const e of events) {
         const pageId = e.description;
         if (!pages.has(pageId)) {
             await calendarClient.events.delete({
