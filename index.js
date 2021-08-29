@@ -60,23 +60,7 @@ const calendarClient = google.calendar({
 });
 const notionClient = new Client({ auth: notionToken });
 
-// setInterval(sync, 30000);
-sync();
-
-/**
- * Creates an authorized OAuth2 client using the provided credentials.
- * 
- * @returns {google.auth.OAuth2} An authorized OAuth2 client.
- */
-function createGoogleAuth() {
-    let auth = new google.auth.OAuth2(
-        googleClientId,
-        googleClientSecret,
-        googleRedirectUrl,
-    );
-    auth.setCredentials({ refresh_token: googleRefreshToken });
-    return auth;
-}
+setInterval(sync, 30000);
 
 /**
  * Syncs the given Notion database to the given Google Calendar.
@@ -85,68 +69,6 @@ async function sync() {
     const pages = await getPages();
     await syncGCal(pages);
     await syncNotion(pages);
-}
-
-/**
- * Returns a map of all pages in the specified database.
- * 
- * @returns {Map} A map, with page ids as keys and reduced pages as values.
- */
-async function getPages() {
-    const pages = [];
-    let cursor = undefined;
-    do {
-        const { results, next_cursor } = await notionClient.databases.query({
-            database_id: notionDatabaseId,
-            start_cursor: cursor,
-            filter: pageFilter,
-        });
-        pages.push(...results);
-        cursor = next_cursor;
-    } while (cursor);
-    return new Map(pages.map(page => [page.id, reducePage(page)]));
-}
-
-async function getPage(pageId) {
-    try {
-        const page = await notionClient.pages.retrieve({ page_id: pageId });
-        return reducePage(page);
-    } catch (error) {
-        return undefined;
-    }
-}
-
-/**
- * Reduces a page object to only its necessary properties.
- * 
- * @param {Object} page A page object.
- * @returns {Object} An object containing the pages id, name, course, date, and status.
- */
-function reducePage(page) {
-    const reducedPage = {
-        id: page.id,
-        name: undefined,
-        course: undefined,
-        date: undefined,
-        status: undefined,
-    };
-    if (page.properties["Name"].title[0]) {
-        reducedPage.name = page.properties["Name"].title[0].plain_text;
-    }
-    if (page.properties["Course"].select) {
-        reducedPage.course = page.properties["Course"].select.name;
-    }
-    if (page.properties["Date"].date) {
-        if (page.properties["Date"].date.end) {
-            reducedPage.date = page.properties["Date"].date.end;
-        } else {
-            reducedPage.date = page.properties["Date"].date.start;
-        }
-    }
-    if (page.properties["Status"].select) {
-        reducedPage.status = page.properties["Status"].select.name;
-    }
-    return reducedPage;
 }
 
 /**
@@ -191,7 +113,114 @@ async function syncNotion(pages) {
     }
 }
 
-function createEvent(page) {
+/**
+ * Creates an authorized OAuth2 client using the provided credentials.
+ * 
+ * @returns {google.auth.OAuth2} An authorized OAuth2 client.
+ */
+ function createGoogleAuth() {
+    let auth = new google.auth.OAuth2(
+        googleClientId,
+        googleClientSecret,
+        googleRedirectUrl,
+    );
+    auth.setCredentials({ refresh_token: googleRefreshToken });
+    return auth;
+}
+
+/**
+ * Returns a map of all pages in the specified database.
+ * 
+ * @returns {Map} A map, with page ids as keys and reduced pages as values.
+ */
+ async function getPages() {
+    const pages = [];
+    let cursor = undefined;
+    do {
+        const { results, next_cursor } = await notionClient.databases.query({
+            database_id: notionDatabaseId,
+            start_cursor: cursor,
+            filter: pageFilter,
+        });
+        pages.push(...results);
+        cursor = next_cursor;
+    } while (cursor);
+    return new Map(pages.map(page => [page.id, reducePage(page)]));
+}
+
+/**
+ * Returns the reduced page with given page id.
+ * 
+ * @param {string} pageId A Notion page id.
+ * @returns {Object} An object containing the page's id, name, course, date, and status.
+ */
+async function getPage(pageId) {
+    try {
+        const page = await notionClient.pages.retrieve({ page_id: pageId });
+        return reducePage(page);
+    } catch (error) {
+        return undefined;
+    }
+}
+
+/**
+ * Reduces a page object to only its necessary properties.
+ * 
+ * @param {Object} page A page object.
+ * @returns {Object} An object containing the page's id, name, course, date, and status.
+ */
+function reducePage(page) {
+    const reducedPage = {
+        id: page.id,
+        name: undefined,
+        course: undefined,
+        date: undefined,
+        status: undefined,
+    };
+    if (page.properties["Name"].title[0]) {
+        reducedPage.name = page.properties["Name"].title[0].plain_text;
+    }
+    if (page.properties["Course"].select) {
+        reducedPage.course = page.properties["Course"].select.name;
+    }
+    if (page.properties["Date"].date) {
+        if (page.properties["Date"].date.end) {
+            reducedPage.date = page.properties["Date"].date.end;
+        } else {
+            reducedPage.date = page.properties["Date"].date.start;
+        }
+    }
+    if (page.properties["Status"].select) {
+        reducedPage.status = page.properties["Status"].select.name;
+    }
+    return reducedPage;
+}
+
+/**
+ * Gets the events from the specified calendar.
+ * 
+ * @returns {Array} An array of events from the specified calendar.
+ */
+async function getEvents() {
+    const events = [];
+    let pageToken = undefined;
+    do {
+        const { data } = await calendarClient.events.list({
+            calendarId: googleCalendarId,
+            pageToken: pageToken,
+        });
+        events.push(...data.items)
+        pageToken = data.nextPageToken;
+    } while (pageToken);
+    return events;
+}
+
+/**
+ * 
+ * @param {Object} page An object containing the page's id, name, course, date, and status.
+ * @returns {Object} A Google Calendar event.
+ */
+ function createEvent(page) {
     const event = {
         summary: "",
         description: page.id,
@@ -215,63 +244,12 @@ function createEvent(page) {
     return event;
 }
 
-function strikeThrough(text) {
+/**
+ * Returns the given string, but as strikethrough text.
+ * 
+ * @param {string} text A string.
+ * @returns {string} The given string as strikethrough text.
+ */
+ function strikeThrough(text) {
     return text.split('').map(char => char + '\u0336').join('');
-}
-
-/**
- * Gets the events from the specified calendar.
- * 
- * @returns {Array} An array of events from the specified calendar.
- */
-async function getEvents() {
-    const events = [];
-    let pageToken = undefined;
-    do {
-        const { data } = await calendarClient.events.list({
-            calendarId: googleCalendarId,
-            pageToken: pageToken,
-        });
-        events.push(...data.items)
-        pageToken = data.nextPageToken;
-    } while (pageToken);
-    return events;
-}
-
-async function getTasks() {
-    const tasks = [];
-    const taskList = await getTaskList();
-    let pageToken = undefined;
-    do {
-        const { data } = await calendarClient.calendarList.list({
-            tasklist: taskList,
-            pageToken: pageToken,
-            showCompleted: true,
-            showHidden: true,
-            maxResults: 1,
-        });
-        if (data.items) {
-            tasks.push(...data.items);
-        }
-        pageToken = data.nextPageToken;
-    } while (pageToken);
-    return tasks;
-}
-
-/**
- * 
- * @param {string} str
- * @returns 
- */
-function formatDateRFC(dateString) {
-    const date = new Date(Date.parse(dateString));
-    function pad(n) {
-        return n < 10 ? '0' + n : n;
-    }
-    return date.getUTCFullYear()+'-'
-         + pad(date.getUTCMonth()+1)+'-'
-         + pad(date.getUTCDate())+'T'
-         + pad(date.getUTCHours())+':'
-         + pad(date.getUTCMinutes())+':'
-         + pad(date.getUTCSeconds())+'Z';
 }
