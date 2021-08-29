@@ -78,7 +78,7 @@ const notionClient = new Client({
     auth: notionToken,
 });
 
-setInterval(sync, 5000);
+setInterval(sync, 60000);
 
 /**
  * Syncs the given Notion database to the given Google Calendar.
