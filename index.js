@@ -67,9 +67,7 @@ setInterval(sync, 30000);
  */
 async function sync() {
     const pages = await getPages();
-    console.log(pages);
     await syncGCal(pages);
-    console.log(pages);
     await syncNotion(pages);
 }
 
