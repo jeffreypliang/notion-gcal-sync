@@ -19,38 +19,54 @@ const googleRedirectUrl = "https://developers.google.com/oauthplayground";
 const googleCalendarId = process.env.GOOGLE_CALENDAR_ID;
 
 const pageFilter = {
-    or: [
+    and: [
         {
-            property: "Type",
-            select: {
-                equals: "Lab"
-            }
+            property: "Date",
+            date: {
+                is_not_empty: true,
+            },
         },
         {
-            property: "Type",
+            property: "Status",
             select: {
-                equals: "Quiz"
-            }
+                does_not_equal: "Done",
+            },
         },
         {
-            property: "Type",
-            select: {
-                equals: "Homework"
-            }
+            or: [
+                {
+                    property: "Type",
+                    select: {
+                        equals: "Lab",
+                    },
+                },
+                {
+                    property: "Type",
+                    select: {
+                        equals: "Quiz",
+                    },
+                },
+                {
+                    property: "Type",
+                    select: {
+                        equals: "Homework",
+                    },
+                },
+                {
+                    property: "Type",
+                    select: {
+                        equals: "Project",
+                    },
+                },
+                {
+                    property: "Type",
+                    select: {
+                        equals: "Extra Credit",
+                    },
+                },
+            ],
         },
-        {
-            property: "Type",
-            select: {
-                equals: "Project"
-            }
-        },
-        {
-            property: "Type",
-            select: {
-                equals: "Extra Credit"
-            }
-        },
-    ]
+    ],
 }
 
 const googleAuth = createGoogleAuth();
@@ -58,17 +74,24 @@ const calendarClient = google.calendar({
     version: 'v3',
     auth: googleAuth,
 });
-const notionClient = new Client({ auth: notionToken });
+const notionClient = new Client({
+    auth: notionToken,
+});
 
-setInterval(sync, 30000);
+setInterval(sync, 5000);
 
 /**
  * Syncs the given Notion database to the given Google Calendar.
  */
 async function sync() {
-    const pages = await getPages();
-    await syncGCal(pages);
-    await syncNotion(pages);
+    try {
+        console.log("Syncing...");
+        const pages = await getPages();
+        await syncGCal(pages);
+        await syncNotion(pages);
+    } catch (error) {
+        console.error(error);
+    }
 }
 
 /**
@@ -86,14 +109,14 @@ async function syncGCal(pages) {
                 eventId: e.id,
             });
         } else {
-            const page = await getPage(pageId);
+            const page = pages.get(pageId);
             const event = createEvent(page);
             await calendarClient.events.update({
                 calendarId: googleCalendarId,
                 eventId: e.id,
                 requestBody: event,
             });
-            pages.delete(page.id);
+            pages.delete(pageId);
         }
     }
 }
@@ -104,7 +127,7 @@ async function syncGCal(pages) {
  * @param {Map} pages A map, with page ids as keys and reduced pages as values.
  */
 async function syncNotion(pages) {
-    for (const [pageId, page] of pages) {
+    for (const [, page] of pages) {
         const event = createEvent(page);
         await calendarClient.events.insert({
             calendarId: googleCalendarId,
@@ -146,21 +169,6 @@ async function syncNotion(pages) {
         cursor = next_cursor;
     } while (cursor);
     return new Map(pages.map(page => [page.id, reducePage(page)]));
-}
-
-/**
- * Returns the reduced page with given page id.
- * 
- * @param {string} pageId A Notion page id.
- * @returns {Object} An object containing the page's id, name, course, date, and status.
- */
-async function getPage(pageId) {
-    try {
-        const page = await notionClient.pages.retrieve({ page_id: pageId });
-        return reducePage(page);
-    } catch (error) {
-        return undefined;
-    }
 }
 
 /**
@@ -209,7 +217,7 @@ async function getEvents() {
             calendarId: googleCalendarId,
             pageToken: pageToken,
         });
-        events.push(...data.items)
+        events.push(...data.items);
         pageToken = data.nextPageToken;
     } while (pageToken);
     return events;
@@ -224,12 +232,8 @@ async function getEvents() {
     const event = {
         summary: "",
         description: page.id,
-        start: {
-            dateTime: page.date,
-        },
-        end: {
-            dateTime: page.date,
-        },
+        start: undefined,
+        end: undefined,
     };
     if (page.name) {
         if (page.course) {
@@ -238,8 +242,21 @@ async function getEvents() {
             event.summary = page.name;
         }
     }
-    if (page.status == "Done") {
-        event.summary = strikeThrough(event.summary);
+    // if (page.status == "Done") {
+    //     event.summary = strikeThrough(event.summary);
+    // }
+    if (page.date.length == 10) {
+        const date = {
+            date: page.date,
+        }
+        event.start = date;
+        event.end = date;
+    } else {
+        const date = {
+            dateTime: page.date,
+        }
+        event.start = date;
+        event.end = date;
     }
     return event;
 }
