@@ -67,7 +67,9 @@ setInterval(sync, 30000);
  */
 async function sync() {
     const pages = await getPages();
+    console.log(pages);
     await syncGCal(pages);
+    console.log(pages);
     await syncNotion(pages);
 }
 
@@ -80,13 +82,13 @@ async function syncGCal(pages) {
     const events = await getEvents();
     for (e of events) {
         const pageId = e.description;
-        const page = await getPage(pageId);
-        if (!page) {
+        if (!pages.has(pageId)) {
             await calendarClient.events.delete({
                 calendarId: googleCalendarId,
                 eventId: e.id,
             });
         } else {
+            const page = await getPage(pageId);
             const event = createEvent(page);
             await calendarClient.events.update({
                 calendarId: googleCalendarId,
