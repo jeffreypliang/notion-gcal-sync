@@ -218,7 +218,9 @@ async function getEvents() {
         }
     }
     if (page.status == "Done") {
-        event.summary = strikeThrough(event.summary);
+        event.summary = `\u2705 ${event.summary}`;
+    } else {
+        event.summary = `\u274c ${event.summary}`;
     }
     if (page.date.length == 10) {
         const date = {
